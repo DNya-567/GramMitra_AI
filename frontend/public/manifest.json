@@ -1,0 +1,8 @@
+{
+  "name": "GramMitra",
+  "short_name": "GramMitra",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#2E7D32",
+  "background_color": "#FAFAF7"
+}

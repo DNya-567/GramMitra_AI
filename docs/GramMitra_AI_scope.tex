@@ -1,0 +1,196 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{parskip}
+
+\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{1em}{}
+
+\title{\textbf{GramMitra\_AI \\ \large Multilingual AI Farmer Assistant \\ \large Project Scope \& Team Collaboration Reference}}
+\author{Final Year Computer Engineering Project \\ ISBM College of Engineering, Pune (SPPU)}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Problem Statement}
+Farmers in India face two connected gaps. First, agricultural advisory --
+crop selection, fertilizer use, weather-based decisions, and awareness of
+government schemes -- is often not available in their own language.
+Second, when something goes wrong (electricity outage affecting
+irrigation, water supply issues, crop damage), there is no simple way to
+know which government department to approach. This project builds a
+single multilingual AI-assisted platform that gives farmers proactive
+agricultural guidance in their own language, connects them to relevant
+government scheme information, and helps them correctly route complaints
+to the right department.
+
+\section{Scope}
+
+\subsection{In Scope (Version 1)}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Crop recommendation} -- soil type, N-P-K values, and
+    rainfall/region as input, suggested crops as output (ML model trained
+    on a crop-recommendation dataset).
+  \item \textbf{Weather-based advisory} -- live weather data via API,
+    translated into simple actionable advice for farming decisions.
+  \item \textbf{Fertilizer suggestion} -- crop and soil deficiency mapped
+    to a fertilizer type/quantity recommendation.
+  \item \textbf{Multilingual AI chatbot} -- farmer queries answered in
+    English and at least one regional language (Hindi/Marathi), using a
+    pretrained multilingual NLP model (e.g. IndicBERT) rather than a
+    model trained from scratch.
+  \item \textbf{Complaint classification \& routing} -- farmer describes
+    an issue (e.g. electricity, water, crop damage); the system classifies
+    the category and returns the correct department, contact information,
+    and a reference ID. \emph{Note: this is a smart routing
+    recommendation within our own system, not a live integration with
+    government complaint-filing APIs, which are not publicly available.}
+  \item \textbf{Government scheme \& subsidy guidance} -- folded into the
+    chatbot's knowledge base; answers eligibility and application
+    questions on schemes such as PM-KISAN, PMFBY (crop insurance),
+    PM-KUSUM, and Soil Health Card, in the farmer's own language.
+  \item \textbf{Live market price checker} -- mandi/crop prices pulled
+    from a public source (e.g. Agmarknet/e-NAM open data via
+    data.gov.in), filterable by crop and district.
+  \item \textbf{Progressive Web App (PWA)} -- installable, offline-caching
+    layer added once the core web platform is stable, to support farmers
+    on low-end phones with patchy connectivity.
+\end{itemize}
+
+\subsection{Out of Scope}
+\begin{itemize}[leftmargin=*]
+  \item Real integration with government complaint-filing or insurance
+    claim-status APIs (not publicly available to student developers).
+  \item Native mobile app (PWA covers the mobile use case; native app is
+    only a stretch goal if there is real time remaining).
+  \item Payment or subsidy disbursement processing.
+  \item IoT/hardware sensors -- all inputs are entered manually by the
+    farmer.
+  \item Cold-storage/warehouse locator and credit/loan processing
+    (considered and explicitly excluded -- no reliable open dataset for
+    the former, regulatory territory for the latter).
+\end{itemize}
+
+\subsection{Stretch Goals (only after core features are stable)}
+\begin{itemize}[leftmargin=*]
+  \item Voice input for the chatbot.
+  \item Farmer login with query/complaint history dashboard.
+  \item SMS/notification alerts for weather warnings.
+  \item Native mobile app built on top of the PWA.
+\end{itemize}
+
+\subsection{Scope Change Policy}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Feature-level changes} (adding/removing/swapping a
+    feature) require agreement from all team members, not a single
+    developer's decision. Propose changes as a GitHub Issue tagged
+    \texttt{scope-change} with a one-line reason \emph{before} any code
+    is written, and update this document in the same pull request once
+    agreed.
+  \item \textbf{Implementation-level decisions} (e.g. choice of model,
+    library, internal code structure) are the responsibility of whoever
+    owns that module -- no team vote required.
+  \item \textbf{Scope freeze:} the feature list locks around month 4 of
+    the project timeline. After the freeze, only bug fixes and polish are
+    permitted -- no new features or swaps.
+\end{itemize}
+
+\section{Team Collaboration \& Git Workflow}
+
+\subsection{Repository Structure}
+\begin{verbatim}
+frontend/   React web app
+backend/    API server (FastAPI/Flask)
+ml/         ML models: crop recommendation, fertilizer suggestion,
+            complaint classifier, scheme/price lookup logic
+docs/       Architecture notes, API contract, this scope document
+\end{verbatim}
+
+\subsection{Branching Strategy}
+\begin{itemize}[leftmargin=*]
+  \item \texttt{main} -- always working, demo-ready. Protected; no direct
+    pushes; changes land only via a reviewed pull request.
+  \item \texttt{develop} -- integration branch; all feature branches
+    merge here first.
+  \item \texttt{feature/<short-name>} -- one branch per task, e.g.
+    \texttt{feature/crop-recommendation}, branched from \texttt{develop}.
+  \item \texttt{fix/<short-name>} -- bug fixes.
+\end{itemize}
+
+\subsection{Divide the Work -- Module Ownership}
+With four team members, each person owns one clear module boundary so
+work does not overlap on the same files:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Frontend} -- UI, multilingual interface, PWA setup.
+  \item \textbf{Backend/API} -- endpoints, database, complaint routing
+    and scheme/price lookup logic.
+  \item \textbf{ML/NLP} -- crop recommendation model, fertilizer logic,
+    chatbot NLP integration, complaint classifier.
+  \item \textbf{Data, integrations \& documentation} -- datasets, weather
+    and market-price API integration, keeping this document and the
+    report in sync with what is actually built.
+\end{itemize}
+Roles can overlap slightly so no single person is a bottleneck, but each
+module should have one clear owner.
+
+\subsection{Contract-First Development}
+Before writing code for any feature, define the exact API request/response
+shapes and database schema in \texttt{docs/api-contract.md} as a team.
+This is what allows four people (or their AI coding tools) to build
+independently and still have the pieces fit together -- it does not
+matter that different developers or different AI tools produce different
+code, as long as everyone builds against the same agreed contract.
+
+\subsection{Shared Conventions}
+\begin{itemize}[leftmargin=*]
+  \item One shared starter repository skeleton -- everyone builds on top
+    of it rather than generating a full app independently from scratch.
+  \item Shared linting/formatting (ESLint + Prettier for JS, Black +
+    Flake8 for Python) enforced via a pre-commit hook, so code is
+    normalized regardless of how it was generated.
+  \item A short conventions document (naming, folder structure, error
+    handling) pasted as context whenever prompting an AI coding tool, so
+    different people's AI-assisted output converges on the same
+    patterns.
+  \item Commit messages: short and specific (e.g. ``Add crop
+    recommendation API endpoint''), not vague (``update'', ``fix
+    stuff'').
+\end{itemize}
+
+\subsection{Code Review \& Integration}
+\begin{itemize}[leftmargin=*]
+  \item Every pull request into \texttt{develop} requires at least one
+    teammate's review before merging -- this catches logic that does not
+    match the agreed contract, not just style issues.
+  \item Basic integration tests check that each API endpoint returns the
+    fields the frontend expects, catching contract drift early.
+  \item A fixed weekly integration sync -- merge everyone's branches into
+    \texttt{develop} and confirm the whole app still runs together,
+    rather than discovering integration issues in the final weeks.
+\end{itemize}
+
+\subsection{Secrets \& Environment}
+Never commit API keys, database passwords, or \texttt{.env} files -- use
+a \texttt{.gitignore} from the start and share secrets separately
+(e.g. a shared password manager), never inside the repository.
+
+\section{Suggested Timeline (6--8 Months)}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Months 1--2:} Literature review, dataset finalization,
+    architecture design, backend + crop/weather/fertilizer core built.
+  \item \textbf{Months 3--4:} Multilingual chatbot, complaint routing,
+    scheme guidance, and market price checker built; git workflow and
+    weekly integration running. Scope freeze at end of month 4.
+  \item \textbf{Month 5:} Stabilize the web platform end-to-end; begin
+    PWA conversion once the frontend is stable.
+  \item \textbf{Month 6:} PWA polish, testing, evaluation metrics
+    gathered.
+  \item \textbf{Months 7--8:} Buffer for bug fixes, documentation, report
+    writing, and presentation preparation.
+\end{itemize}
+
+\end{document}

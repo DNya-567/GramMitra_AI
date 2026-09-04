@@ -1,8 +1,17 @@
-export default function Login() {
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import Home from "./pages/Home.jsx";
+import Login from "./pages/Login.jsx";
+import Dashboard from "./pages/Dashboard.jsx";
+
+export default function App() {
   return (
-    <div>
-      <h1>Login</h1>
-      {/* TODO: build this screen */}
-    </div>
-  )
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        {/* Add more routes here, e.g. /chatbot, /prices, /complaint */}
+      </Routes>
+    </BrowserRouter>
+  );
 }

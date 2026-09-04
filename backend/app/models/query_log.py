@@ -1,15 +1,17 @@
-from sqlalchemy import Column, String, Integer, DateTime
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
+from sqlalchemy import Column, String, DateTime, JSON
+from sqlalchemy.dialects.postgresql import UUID
+
 from app.db.database import Base
 
 
 class QueryLog(Base):
-    """Logs chatbot queries -- useful later for evaluating chatbot accuracy."""
-    __tablename__ = "query_logs"
+    __tablename__ = "query_log"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    farmer_uid = Column(String)
-    query_text = Column(String)
-    reply_text = Column(String)
-    language = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), nullable=False, index=True)  # references auth.users.id
+    feature = Column(String, nullable=False)  # "crop" | "weather" | "fertilizer" | "chatbot" | "price" | "scheme"
+    request_summary = Column(JSON, nullable=True)   # e.g. {"region": "Pune"} or {"message": "..."}
+    response_summary = Column(JSON, nullable=True)  # e.g. {"recommended_crop": "rice"}
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

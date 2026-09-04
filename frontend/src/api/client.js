@@ -1,16 +1,24 @@
-// Shared fetch wrapper -- every api/*.js file uses this so the
-// Authorization header and base URL logic lives in exactly one place.
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'
+import { supabase } from "./supabaseClient";
 
-export async function apiRequest(path, { method = 'GET', body, token } = {}) {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method,
+const API_BASE = "http://localhost:8000/api/v1";
+
+export async function apiFetch(path, options = {}) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
     headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "Content-Type": "application/json",
+      ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      ...options.headers,
     },
-    body: body ? JSON.stringify(body) : undefined,
-  })
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
-  return res.json()
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Request failed: ${res.status}`);
+  }
+  return res.json();
 }

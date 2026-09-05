@@ -1,0 +1,101 @@
+:root {
+  --color-bg: #faf6ec;
+  --color-surface: #ffffff;
+  --color-ink: #22301f;
+  --color-ink-soft: #56604f;
+  --color-primary: #33633c;
+  --color-primary-dark: #244a2b;
+  --color-accent: #d9a441;
+  --color-sky: #4a7c96;
+  --color-clay: #b15e3b;
+  --color-line: #e4dcc8;
+
+  --font-heading: "Poppins", sans-serif;
+  --font-body: "Noto Sans", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-heading);
+  margin: 0;
+  color: var(--color-ink);
+}
+
+h1 { font-size: 2rem; font-weight: 600; }
+h2 { font-size: 1.4rem; font-weight: 600; }
+h3 { font-size: 1.1rem; font-weight: 600; }
+
+p { margin: 0; color: var(--color-ink-soft); }
+
+button {
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+
+input {
+  font-family: var(--font-body);
+}
+
+a { color: var(--color-primary); }
+
+.btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+  transition: background 0.15s ease;
+}
+.btn-primary:hover { background: var(--color-primary-dark); }
+.btn-primary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+.btn-text {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
+  text-decoration: underline;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+.field label {
+  font-size: 0.875rem;
+  color: var(--color-ink-soft);
+}
+.field input {
+  border: 1px solid var(--color-line);
+  border-radius: 8px;
+  padding: 0.7rem 0.85rem;
+  font-size: 1rem;
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+.field input:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.error-text {
+  color: var(--color-clay);
+  font-size: 0.875rem;
+}

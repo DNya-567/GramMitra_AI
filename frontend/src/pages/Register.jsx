@@ -65,11 +65,11 @@ export default function Register() {
           />
         </div>
         {error && <p className="error-text">{error}</p>}
-        <button className="btn-primary" type="submit" disabled={loading} style={{ width: "100%" }}>
+        <button className="btn-primary btn-full" type="submit" disabled={loading}>
           {loading ? "Creating account..." : "Create account"}
         </button>
       </form>
-      <p style={{ marginTop: "1.25rem", fontSize: "0.9rem" }}>
+      <p className="auth-link">
         Already have an account? <Link to="/login">Log in</Link>
       </p>
     </AuthLayout>

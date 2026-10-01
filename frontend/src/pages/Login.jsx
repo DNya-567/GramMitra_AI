@@ -49,11 +49,11 @@ export default function Login() {
           />
         </div>
         {error && <p className="error-text">{error}</p>}
-        <button className="btn-primary" type="submit" disabled={loading} style={{ width: "100%" }}>
+        <button className="btn-primary btn-full" type="submit" disabled={loading}>
           {loading ? "Logging in..." : "Log in"}
         </button>
       </form>
-      <p style={{ marginTop: "1.25rem", fontSize: "0.9rem" }}>
+      <p className="auth-link">
         New here? <Link to="/register">Create an account</Link>
       </p>
     </AuthLayout>

@@ -48,12 +48,12 @@ export default function CropRecommend() {
   }
 
   return (
-    <div style={{ maxWidth: "480px", margin: "0 auto", padding: "2rem 1.5rem" }}>
-      <button className="btn-text" onClick={() => navigate("/dashboard")} style={{ marginBottom: "1rem" }}>
+    <div className="centered-container">
+      <button className="btn-text back-link" onClick={() => navigate("/dashboard")}>
         Back to Dashboard
       </button>
       <h1>Crop Recommendation</h1>
-      <p style={{ marginBottom: "1.5rem" }}>Enter your soil and climate details below.</p>
+      <p className="dashboard-description">Enter your soil and climate details below.</p>
 
       <form onSubmit={handleSubmit}>
         <div className="field">
@@ -85,15 +85,15 @@ export default function CropRecommend() {
           <input name="rainfall_mm" type="number" value={form.rainfall_mm} onChange={handleChange} required />
         </div>
         {error && <p className="error-text">{error}</p>}
-        <button className="btn-primary" type="submit" disabled={loading} style={{ width: "100%" }}>
+        <button className="btn-primary btn-full" type="submit" disabled={loading}>
           {loading ? "Checking..." : "Get recommendation"}
         </button>
       </form>
 
       {result && (
-        <div style={{ marginTop: "1.5rem", background: "#fff", border: "1px solid var(--color-line)", borderLeft: "4px solid #33633c", borderRadius: "8px", padding: "1.25rem" }}>
+        <div className="result-card">
           <h3>Recommended crop: {result.recommended_crop}</h3>
-          <p style={{ marginTop: "0.35rem" }}>Confidence: {(result.confidence * 100).toFixed(0)}%</p>
+          <p>Confidence: {(result.confidence * 100).toFixed(0)}%</p>
         </div>
       )}
     </div>

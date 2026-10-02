@@ -6,22 +6,23 @@ can then be built independently and still fit together.
 
 ## Example (fill in real ones below)
 
-### POST /api/crop-recommend
+### POST /api/v1/crop/recommend
 Request:
 ```json
 {
-  "soil_type": "string",
   "nitrogen": "number",
   "phosphorus": "number",
   "potassium": "number",
-  "rainfall_mm": "number",
-  "region": "string"
+  "temperature": "number",
+  "humidity": "number",
+  "ph": "number",
+  "rainfall_mm": "number"
 }
 ```
 Response:
 ```json
 {
-  "recommended_crops": ["string"],
+  "recommended_crop": "string",
   "confidence": "number"
 }
 ```

@@ -14,30 +14,35 @@ const FEATURES = [
 
 export default function Dashboard() {
   const [email, setEmail] = useState("");
+  const [firstName, setFirstName] = useState("Friend");
   const navigate = useNavigate();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const getSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         navigate("/login");
         return;
       }
       setEmail(session.user.email);
-    });
-  }, [navigate]);
+      // Extract first name from email (before @) or use a default
+      const namePart = session.user.email?.split('@')[0] || "Friend";
+      setFirstName(namePart.charAt(0).toUpperCase() + namePart.slice(1));
+    };
 
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    navigate("/login");
-  }
+    getSession();
+  }, [navigate]);
 
   return (
     <div className="page-container">
-      <div className="dashboard-header">
-        <h1>GramMitra</h1>
-        <div className="dashboard-user-info">
-          <span className="dashboard-user-email">{email}</span>
-          <button className="btn-text" onClick={handleLogout}>Log out</button>
+      {/* Greeting Card */}
+      <div className="greeting-card">
+        <div className="greeting-text">
+          Good morning, {firstName}! 👋
+        </div>
+        <div className="location-weather">
+          Akola, Maharashtra<br />
+          32°C · Partly cloudy
         </div>
       </div>
 
@@ -49,12 +54,21 @@ export default function Dashboard() {
           <button
             key={f.path}
             onClick={() => navigate(f.path)}
-            className={`dashboard-tile border-left-${f.color.replace("#", "")}`}
+            className="dashboard-tile"
           >
-            <h3>{f.title}</h3>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.5rem' }}>
+              <span className="feature-badge" style={{ backgroundColor: f.color }}></span>
+              <h3>{f.title}</h3>
+            </div>
             <p>{f.desc}</p>
           </button>
         ))}
+      </div>
+
+      {/* Tip of the Day Card */}
+      <div className="tip-card">
+        <h3>💡 Tip of the Day</h3>
+        <p>For better crop yield, ensure proper soil preparation by tilling to a depth of 6-8 inches and adding organic compost before planting. This improves soil structure, water retention, and nutrient availability for healthy root development.</p>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 ﻿from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import crop, weather, fertilizer, chatbot, complaint, scheme, price
+from app.routes import crop, weather, fertilizer, chatbot, complaint, scheme, price, profile
 
 app = FastAPI(title="GramMitra AI API")
 
@@ -20,6 +20,7 @@ app.include_router(chatbot.router, prefix="/api/v1/chatbot", tags=["chatbot"])
 app.include_router(complaint.router, prefix="/api/v1/complaint", tags=["complaint"])
 app.include_router(scheme.router, prefix="/api/v1/scheme", tags=["scheme"])
 app.include_router(price.router, prefix="/api/v1/price", tags=["price"])
+app.include_router(profile.router, prefix="/api/v1/profile", tags=["profile"])
 
 
 @app.get("/health")

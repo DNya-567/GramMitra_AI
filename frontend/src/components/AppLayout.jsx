@@ -12,11 +12,29 @@ import {
   Building,
   User,
   LogOut,
+  Menu,
 } from 'lucide-react';
 
 export default function AppLayout() {
   const [userEmail, setUserEmail] = useState('');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navigate = useNavigate();
+
+  // Set initial sidebar state based on width and update on resize
+  useEffect(() => {
+    const checkSidebar = () => {
+      if (window.innerWidth >= 900) {
+        setIsSidebarOpen(true);
+      } else {
+        setIsSidebarOpen(false);
+      }
+    };
+    checkSidebar();
+    window.addEventListener('resize', checkSidebar);
+    return () => window.removeEventListener('resize', checkSidebar);
+  }, []);
+
+  const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
 
   useEffect(() => {
     const getSession = async () => {
@@ -48,7 +66,12 @@ export default function AppLayout() {
 
   return (
     <div className="app-layout">
-      <aside className="sidebar">
+      {/* Backdrop for mobile sidebar - only rendered when sidebar is open on mobile */}
+      {isSidebarOpen ? (
+        <div className="backdrop" onClick={toggleSidebar} />
+      ) : null}
+
+      <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-logo">
           <h2>GramMitra</h2>
           <p className="sidebar-tagline">किसान का साथी</p>
@@ -81,11 +104,18 @@ export default function AppLayout() {
           <NavLink to="/profile" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'}>
             <User /> Profile
           </NavLink>
+          <NavLink to="/profile" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'}>
+            <LogOut /> Log Out
+          </NavLink>
         </nav>
       </aside>
+
       <div className="app-layout-main">
         <header className="top-bar">
           <div className="top-bar-left">
+            <button className="hamburger-btn" onClick={toggleSidebar} aria-label="Open menu">
+              <Menu size={24} />
+            </button>
             <button className="lang-toggle">EN</button>
             <button className="dark-mode-toggle">
               {/* We'll use a sun icon for light mode and moon for dark? For now, just a placeholder */}

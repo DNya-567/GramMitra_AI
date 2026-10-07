@@ -7,7 +7,7 @@ export async function apiFetch(path, options = {}) {
     data: { session },
   } = await supabase.auth.getSession();
 
-  console.log("session?", !!session, session?.access_token?.slice(0, 20));
+  console.log("session?", !!session, session?.access_token?.slice(0, 20))
 
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,

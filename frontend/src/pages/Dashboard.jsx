@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../api/supabaseClient";
+import { Activity, Thermometer, Sparkles, MessageSquare, AlertTriangle, DollarSign, Building } from 'lucide-react';
 
 const FEATURES = [
-  { title: "Crop Recommendation", desc: "Get a crop suggestion based on your soil and rainfall.", path: "/crop", color: "#33633c" },
-  { title: "Weather Advisory", desc: "See how the forecast should change your plans.", path: "/weather", color: "#4a7c96" },
-  { title: "Fertilizer Suggestion", desc: "Find the right fertilizer for your crop and soil.", path: "/fertilizer", color: "#d9a441" },
-  { title: "Ask GramMitra", desc: "Chat in your own language about schemes or crops.", path: "/chatbot", color: "#33633c" },
-  { title: "Report a Problem", desc: "Route electricity, water, or crop issues to the right office.", path: "/complaint", color: "#b15e3b" },
-  { title: "Market Prices", desc: "Check today's mandi prices near you.", path: "/prices", color: "#4a7c96" },
-  { title: "Scheme Guidance", desc: "Check eligibility for PM-KISAN, PMFBY, and more.", path: "/schemes", color: "#d9a441" },
+  { title: "Crop Recommendation", desc: "Get a crop suggestion based on your soil and rainfall.", path: "/crop", color: "#33633c", icon: Activity },
+  { title: "Weather Advisory", desc: "See how the forecast should change your plans.", path: "/weather", color: "#4a7c96", icon: Thermometer },
+  { title: "Fertilizer Suggestion", desc: "Find the right fertilizer for your crop and soil.", path: "/fertilizer", color: "#d9a441", icon: Sparkles },
+  { title: "Ask GramMitra", desc: "Chat in your own language about schemes or crops.", path: "/chatbot", color: "#33633c", icon: MessageSquare },
+  { title: "Report a Problem", desc: "Route electricity, water, or crop issues to the right office.", path: "/complaint", color: "#b15e3b", icon: AlertTriangle },
+  { title: "Market Prices", desc: "Check today's mandi prices near you.", path: "/prices", color: "#4a7c96", icon: DollarSign },
+  { title: "Scheme Guidance", desc: "Check eligibility for PM-KISAN, PMFBY, and more.", path: "/schemes", color: "#d9a441", icon: Building },
 ];
 
 export default function Dashboard() {
@@ -54,21 +55,23 @@ export default function Dashboard() {
           <button
             key={f.path}
             onClick={() => navigate(f.path)}
-            className="dashboard-tile"
+            className={`dashboard-tile ${`border-left-${f.color.replace('#', '')}`}`}
           >
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <span className="feature-badge" style={{ backgroundColor: f.color }}></span>
-              <h3>{f.title}</h3>
+            <div className="feature-icon-badge" style={{ backgroundColor: f.color }}>
+              <f.icon className="feature-icon" size={20} color="#fff" />
             </div>
-            <p>{f.desc}</p>
+            <div>
+              <h3 className="feature-title">{f.title}</h3>
+              <p className="feature-desc">{f.desc}</p>
+            </div>
           </button>
         ))}
       </div>
 
       {/* Tip of the Day Card */}
       <div className="tip-card">
-        <h3>💡 Tip of the Day</h3>
-        <p>For better crop yield, ensure proper soil preparation by tilling to a depth of 6-8 inches and adding organic compost before planting. This improves soil structure, water retention, and nutrient availability for healthy root development.</p>
+        <div className="tip-card-label">TIP OF THE DAY</div>
+        <p className="tip-card-text">For better crop yield, ensure proper soil preparation by tilling to a depth of 6-8 inches and adding organic compost before planting.</p>
       </div>
     </div>
   );

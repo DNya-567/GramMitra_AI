@@ -51,24 +51,23 @@ def verify_token(authorization: str = Header(...)) -> dict:
     try:
         jwks_client = _get_jwks_client()
         signing_key = jwks_client.get_signing_key_from_jwt(token)
-    except Exception as e:
-        # If the token's kid is not found or any other error, treat as invalid
-        raise HTTPException(
-            status_code=401,
-            detail="Unable to verify token"
-        ) from e
-
-    try:
         payload = jwt.decode(
             token,
             signing_key.key,
             algorithms=["ES256"],
             audience="authenticated",
         )
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired")
-    except jwt.PyJWTError as e:
-        raise HTTPException(status_code=401, detail="Invalid token") from e
+    except Exception as e:
+        # If the token's kid is not found, signing key unavailable, or any other error, treat as invalid
+        if isinstance(e, jwt.ExpiredSignatureError):
+            raise HTTPException(status_code=401, detail="Token has expired") from e
+        elif isinstance(e, jwt.PyJWTError):
+            raise HTTPException(status_code=401, detail="Invalid token") from e
+        else:
+            raise HTTPException(
+                status_code=401,
+                detail="Unable to verify token"
+            ) from e
 
     # Supabase puts custom fields (like "role") under user_metadata or
     # app_metadata if you set them at signup — defaults to "farmer" if unset.

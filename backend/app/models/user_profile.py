@@ -17,4 +17,10 @@ class UserProfile(Base):
     phone = Column(String, nullable=True)
     preferred_language = Column(String, nullable=False, default="English")
     location = Column(String, nullable=True)
+    # New location fields
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    village = Column(String, nullable=True)
+    district = Column(String, nullable=True)
+    state = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

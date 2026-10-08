@@ -25,6 +25,12 @@ class ProfileUpdate(BaseModel):
     phone: Optional[str] = None
     preferred_language: Optional[str] = None
     location: Optional[str] = None
+    # New location fields
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    village: Optional[str] = None
+    district: Optional[str] = None
+    state: Optional[str] = None
 
 
 class ProfileResponse(BaseModel):
@@ -34,6 +40,12 @@ class ProfileResponse(BaseModel):
     phone: str
     preferred_language: str
     location: str
+    # New location fields
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    village: Optional[str] = None
+    district: Optional[str] = None
+    state: Optional[str] = None
     stats: Stats
 
 
@@ -52,6 +64,12 @@ def get_profile(user: dict = Depends(require_auth), db: Session = Depends(get_db
         phone=profile.phone or "",
         preferred_language=profile.preferred_language or "English",
         location=profile.location or "",
+        # New location fields
+        latitude=profile.latitude,
+        longitude=profile.longitude,
+        village=profile.village,
+        district=profile.district,
+        state=profile.state,
         stats=Stats(
             crops_tracked=stats["crops_tracked"],
             reports_filed=stats["reports_filed"],
@@ -81,6 +99,12 @@ def update_profile_endpoint(
         phone=updated_profile.phone or "",
         preferred_language=updated_profile.preferred_language or "English",
         location=updated_profile.location or "",
+        # New location fields
+        latitude=updated_profile.latitude,
+        longitude=updated_profile.longitude,
+        village=updated_profile.village,
+        district=updated_profile.district,
+        state=updated_profile.state,
         stats=Stats(
             crops_tracked=stats["crops_tracked"],
             reports_filed=stats["reports_filed"],

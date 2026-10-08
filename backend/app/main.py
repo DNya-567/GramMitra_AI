@@ -1,9 +1,35 @@
-﻿from fastapi import FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import httpx
+import os
 
 from app.routes import crop, weather, fertilizer, chatbot, complaint, scheme, price, profile
+from app.services import weather_service
 
 app = FastAPI(title="GramMitra AI API")
+
+# Shared HTTP client for weather service
+@app.on_event("startup")
+async def startup_event():
+    # Create shared httpx client with IPv4 transport and timeout settings
+    timeout = httpx.Timeout(10.0, connect=5.0)
+    # Use AsyncHTTPTransport to set local_address for IPv4
+    transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0")
+    shared_client = httpx.AsyncClient(
+        transport=transport,
+        timeout=timeout
+    )
+    # Store in app state and also set in weather service module
+    app.state.httpx_client = shared_client
+    weather_service.httpx_client = shared_client
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    # Close the shared httpx client
+    if hasattr(app.state, 'httpx_client'):
+        await app.state.httpx_client.close()
+    # Also clear the reference in the weather service
+    weather_service.httpx_client = None
 
 app.add_middleware(
     CORSMiddleware,

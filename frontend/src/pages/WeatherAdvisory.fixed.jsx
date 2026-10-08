@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../api/supabaseClient';
 import useFarmLocation from '../utils/useFarmLocation';
 import { cacheWeatherData, getCachedWeatherData, generateWeatherCacheKey, formatTimeAgo } from '../lib/location.jsx';
-import { getUserSession } from '../lib/userSession';
 
 export default function WeatherAdvisory() {
   const [weatherData, setWeatherData] = useState(null);
@@ -18,8 +17,7 @@ export default function WeatherAdvisory() {
     error: locError,
     getCurrentPosition,
     checkPermission,
-    saveLocation,
-    loadLocationFromProfile
+    saveLocation
   } = useFarmLocation();
 
   // Helper function to format date as "Thu, 8 Oct"
@@ -59,8 +57,7 @@ export default function WeatherAdvisory() {
     if (location) {
       (async () => {
         try {
-          // Get cached session (avoids refetching profile/session)
-          const session = await getUserSession();
+          const { data: { session } } = await supabase.auth.getSession();
           const token = session?.access_token;
           if (token) {
             if (location.latitude !== undefined && location.longitude !== undefined) {
@@ -171,7 +168,7 @@ export default function WeatherAdvisory() {
 
   const handleRefresh = async () => {
     try {
-      const session = await getUserSession();
+      const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       if (!token) {
         setError('No session token');
@@ -223,7 +220,7 @@ export default function WeatherAdvisory() {
                   });
                   // Refresh weather data
                   if (pos.latitude !== undefined && pos.longitude !== undefined) {
-                    const session = await getUserSession();
+                    const { data: { session } } = await supabase.auth.getSession();
                     const token = session?.access_token;
                     if (token) {
                       fetchWeather({ lat: pos.latitude, lon: pos.longitude, token });
@@ -405,9 +402,9 @@ export default function WeatherAdvisory() {
         </p>
       )}
       {/* Show data source for debugging */}
-      {weatherData?.source && error && !error.includes('Using cached data') && (
+      {weatherData?.source && !error.includes('Using cached data') && (
         <p style={{ textAlign: 'right', fontSize: '0.75rem', color: 'var(--color-ink-soft)' }}>
-          Data source: {weatherData.source === 'indian_api_imd' ? 'Indian Meteorological Department' : weatherData.source === 'open_meteo' ? 'Open-Meteo' : 'Global Weather API'}
+          Data source: {weatherData.source === 'indian_api_imd' ? 'Indian Meteorological Department' : 'Global Weather API'}
         </p>
       )}
     </div>

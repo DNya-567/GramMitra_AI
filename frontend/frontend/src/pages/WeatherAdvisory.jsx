@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../api/supabaseClient';
 import useFarmLocation from '../utils/useFarmLocation';
-import { cacheWeatherData, getCachedWeatherData, generateWeatherCacheKey, formatTimeAgo } from '../lib/location.jsx';
-import { getUserSession } from '../lib/userSession';
+import { cacheWeatherData, getCachedWeatherData, generateWeatherCacheKey, formatTimeAgo } from '../lib/location';
 
 export default function WeatherAdvisory() {
   const [weatherData, setWeatherData] = useState(null);
@@ -18,8 +17,7 @@ export default function WeatherAdvisory() {
     error: locError,
     getCurrentPosition,
     checkPermission,
-    saveLocation,
-    loadLocationFromProfile
+    saveLocation
   } = useFarmLocation();
 
   // Helper function to format date as "Thu, 8 Oct"
@@ -33,56 +31,23 @@ export default function WeatherAdvisory() {
     }
   };
 
-  // Helper function to construct display name from location object
-  const getDisplayName = (loc) => {
-    if (!loc) return 'Your Location';
-    // Construct from village, district, state
-    const parts = [loc.village, loc.district, loc.state].filter(Boolean);
-    if (parts.length > 0) {
-      return parts.join(', ');
-    }
-    if (typeof loc.location === 'string' && loc.location.trim() !== '') {
-      return loc.location;
-    }
-    if (typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
-      return `Lat: ${loc.latitude}, Lon: ${loc.longitude}`;
-    }
-    return 'Your Location';
-  };
-
   useEffect(() => {
     // Load location from profile when component mounts
-    loadLocationFromProfile();
+    const loadLocation = async () => {
+      // We don't set loading state here to avoid double loading indicators
+      // The location hook handles its own loading state
+    };
+
+    loadLocation();
   }, []);
 
-  useEffect(() => {
-    if (location) {
-      (async () => {
-        try {
-          // Get cached session (avoids refetching profile/session)
-          const session = await getUserSession();
-          const token = session?.access_token;
-          if (token) {
-            if (location.latitude !== undefined && location.longitude !== undefined) {
-              fetchWeather({ lat: location.latitude, lon: location.longitude, token });
-            } else if (location.location) {
-              fetchWeather({ region: location.location, token });
-            }
-            // else: we have no lat/lon and no location string -> do nothing (will show setup UI)
-          } else {
-            setError('No session token');
-          }
-        } catch (err) {
-          setError(err.message);
-        }
-      })();
-    }
-  }, [location]);
-
-  const fetchWeather = async ({ lat, lon, region, token }) => {
+  const fetchWeatherData = async (lat, lon, region) => {
     try {
       setLoading(true);
       setError(null);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
 
       // Build URL with optional parameters
       let url = '/api/v1/weather/weather-advisory';
@@ -112,12 +77,9 @@ export default function WeatherAdvisory() {
       // Note: We don't use cached data here to always get fresh data,
       // but we'll use it if the request fails
 
-      console.debug('Fetching weather with params:', { lat, lon, region });
-      console.debug('Request URL:', url);
-
       const response = await fetch(url, {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json"
         }
       });
@@ -169,21 +131,11 @@ export default function WeatherAdvisory() {
     }
   };
 
-  const handleRefresh = async () => {
-    try {
-      const session = await getUserSession();
-      const token = session?.access_token;
-      if (!token) {
-        setError('No session token');
-        return;
-      }
-      if (location && location.latitude !== undefined && location.longitude !== undefined) {
-        fetchWeather({ lat: location.latitude, lon: location.longitude, token });
-      } else if (location && location.location) {
-        fetchWeather({ region: location.location, token });
-      }
-    } catch (err) {
-      setError(err.message);
+  const handleRefresh = () => {
+    if (location && location.latitude !== undefined && location.longitude !== undefined) {
+      fetchWeatherData(location.latitude, location.longitude);
+    } else if (location && location.location) {
+      fetchWeatherData(undefined, undefined, location.location);
     }
   };
 
@@ -223,13 +175,7 @@ export default function WeatherAdvisory() {
                   });
                   // Refresh weather data
                   if (pos.latitude !== undefined && pos.longitude !== undefined) {
-                    const session = await getUserSession();
-                    const token = session?.access_token;
-                    if (token) {
-                      fetchWeather({ lat: pos.latitude, lon: pos.longitude, token });
-                    } else {
-                      setError('No session token');
-                    }
+                    fetchWeatherData(pos.latitude, pos.longitude);
                   }
                 } catch (err) {
                   // Error is handled by the hook's error state
@@ -280,56 +226,56 @@ export default function WeatherAdvisory() {
   return (
     <div className="centered-container">
       <div className="dashboard-header">
-        <h1>Weather Advisory for {getDisplayName(location)}</h1>
+        <h1>Weather Advisory for {location.place_name || (location.latitude !== undefined && location.longitude !== undefined ? `Lat: ${location.latitude}, Lon: ${location.longitude}` : location.location || 'Your Location')}</h1>
         <button className="btn-text" onClick={handleRefresh}>
           Refresh Data
         </button>
       </div>
 
-      {weatherData?.error && (
+      {weatherData.error && (
         <div className="dashboard-tile" style={{ borderLeftColor: 'var(--color-clay)' }}>
           <h2>Error</h2>
           <p className="error-text">{weatherData.error}</p>
         </div>
       )}
 
-      {! (weatherData?.error) && weatherData?.current && (
+      {!weatherData.error && weatherData.current && (
         <>
           {/* New advisory info section near the top */}
           <div className="dashboard-tile" style={{ borderLeftColor: 'var(--color-success)' }}>
             <h2>Advisory Summary</h2>
-            {weatherData?.best_spray_window && weatherData?.best_spray_window?.length > 0 && (
+            {weatherData.best_spray_window && weatherData.best_spray_window.length > 0 && (
               <>
-                <p><strong>Best Spray Window:</strong> {weatherData?.best_spray_window?.slice(0, 5).join(' • ')}</p>
-                {weatherData?.best_spray_window?.length > 5 && <p><em>+ {weatherData?.best_spray_window?.length - 5} more slots</em></p>}
+                <p><strong>Best Spray Window:</strong> {weatherData.best_spray_window.slice(0, 5).join(' • ')}</p>
+                {weatherData.best_spray_window.length > 5 && <p><em>+ {weatherData.best_spray_window.length - 5} more slots</em></p>}
               </>
             )}
-            {(!weatherData?.best_spray_window || weatherData?.best_spray_window?.length === 0) && (
+            {(!weatherData.best_spray_window || weatherData.best_spray_window.length === 0) && (
               <p><em>No optimal spray window found for today/tomorrow (wind &lt; 15 km/h, no rain)</em></p>
             )}
           </div>
 
           <div className="dashboard-tile" style={{ borderLeftColor: 'var(--color-sky)' }}>
             <h2>Current Conditions</h2>
-            {weatherData?.current?.temperature != null && (
-              <p>Temperature: {weatherData?.current?.temperature}°C</p>
+            {weatherData.current.temperature != null && (
+              <p>Temperature: {weatherData.current.temperature}°C</p>
             )}
-            {weatherData?.current?.humidity != null && (
-              <p>Humidity: {weatherData?.current?.humidity}%</p>
+            {weatherData.current.humidity != null && (
+              <p>Humidity: {weatherData.current.humidity}%</p>
             )}
-            {weatherData?.current?.condition && (
-              <p>Condition: {weatherData?.current?.condition}</p>
+            {weatherData.current.condition && (
+              <p>Condition: {weatherData.current.condition}</p>
             )}
           </div>
 
-          {(weatherData?.forecast ?? []).length > 0 && (
+          {weatherData.forecast && weatherData.forecast.length > 0 && (
             <div className="dashboard-tile" style={{ borderLeftColor: 'var(--color-primary)' }}>
-              <h2>Forecast ({(weatherData?.forecast ?? []).length} days)</h2>
-              {(weatherData?.forecast ?? []).map((day, index) => (
+              <h2>Forecast ({weatherData.forecast.length} days)</h2>
+              {weatherData.forecast.map((day, index) => (
                 <div key={index} style={{
                   marginBottom: '0.75rem',
                   paddingBottom: '0.5rem',
-                  borderBottom: index < (weatherData?.forecast ?? []).length - 1 ? '1px solid var(--color-line)' : 'none'
+                  borderBottom: index < weatherData.forecast.length - 1 ? '1px solid var(--color-line)' : 'none'
                 }}>
                   <strong>{formatDate(day.date) || `Day ${index + 1}`}:</strong>
                   {day.max_temp != null && day.min_temp != null && (
@@ -393,21 +339,15 @@ export default function WeatherAdvisory() {
 
           <div className="dashboard-tile" style={{ borderLeftColor: 'var(--color-accent)' }}>
             <h2>Farming Advisory</h2>
-            <p>{weatherData?.advisory_tip || 'No specific advisory available'}</p>
+            <p>{weatherData.advisory_tip || 'No specific advisory available'}</p>
           </div>
         </>
       )}
 
-      {/* Show cache status when using cached data due to request failure */}
-      {error && error.includes('Using cached data') && (
-        <p style={{ textAlign: 'right', fontSize: '0.75rem', color: 'var(--color-ink-soft)' }}>
-          {error}
-        </p>
-      )}
       {/* Show data source for debugging */}
-      {weatherData?.source && error && !error.includes('Using cached data') && (
+      {weatherData.source && (
         <p style={{ textAlign: 'right', fontSize: '0.75rem', color: 'var(--color-ink-soft)' }}>
-          Data source: {weatherData.source === 'indian_api_imd' ? 'Indian Meteorological Department' : weatherData.source === 'open_meteo' ? 'Open-Meteo' : 'Global Weather API'}
+          Data source: {weatherData.source === 'indian_api_imd' ? 'Indian Meteorological Department' : 'Global Weather API'}
         </p>
       )}
     </div>

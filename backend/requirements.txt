@@ -5,6 +5,7 @@ firebase-admin
 pydantic
 sqlalchemy
 requests
+httpx
 sqlalchemy==2.0.35
 psycopg[binary]>=3.2.10
 pyjwt==2.9.0

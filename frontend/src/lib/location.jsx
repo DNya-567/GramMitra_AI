@@ -160,7 +160,7 @@ export const cacheWeatherData = (cacheKey, data) => {
  * Get cached weather data for a location if not expired
  * @param {string} cacheKey - Unique key for the location
  * @param {number} maxAgeMinutes - Maximum age in minutes (default: 10)
- * @returns {Object|null} Cached data or null if not found/expired
+ * @returns {Object|null} Cached item (with data and timestamp) or null if not found/expired
  */
 export const getCachedWeatherData = (cacheKey, maxAgeMinutes = 10) => {
   try {
@@ -175,7 +175,7 @@ export const getCachedWeatherData = (cacheKey, maxAgeMinutes = 10) => {
       return null;
     }
 
-    return parsed.data;
+    return parsed;
   } catch (e) {
     console.warn('Failed to get cached weather data:', e);
     return null;
@@ -185,11 +185,14 @@ export const getCachedWeatherData = (cacheKey, maxAgeMinutes = 10) => {
 /**
  * Generate cache key from location data
  * @param {Object} location - Location object with latitude/longitude or place name
- * @returns {string} Cache key
+ * @returns {string} Cache key (lat/lon rounded to 2 decimals for consistency)
  */
 export const generateWeatherCacheKey = (location) => {
   if (location.latitude !== undefined && location.longitude !== undefined) {
-    return `lat:${location.latitude},lon:${location.longitude}`;
+    // Round to 2 decimal places as requested (approx 1km accuracy)
+    const lat = Math.round(location.latitude * 100) / 100;
+    const lon = Math.round(location.longitude * 100) / 100;
+    return `lat:${lat},lon:${lon}`;
   } else if (location.location) {
     return `city:${location.location}`;
   } else {

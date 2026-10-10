@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "../api/supabaseClient";
 import { Activity, Thermometer, Sparkles, MessageSquare, AlertTriangle, DollarSign, Building } from "lucide-react";
 import useFarmLocation from "../utils/useFarmLocation";
 import { cacheWeatherData, getCachedWeatherData, generateWeatherCacheKey, formatTimeAgo } from "../lib/location.jsx";
 import { getUserSession } from "../lib/userSession";
+import { useProfile } from "../lib/profileContext.jsx";
 
 const FEATURES = [
   { title: "Crop Recommendation", desc: "Get a crop suggestion based on your soil and rainfall.", path: "/crop", color: "#33633c", icon: Activity },
@@ -17,12 +17,13 @@ const FEATURES = [
 ];
 
 export default function Dashboard() {
-  const [email, setEmail] = useState("");
+  const navigate = useNavigate();
   const [firstName, setFirstName] = useState("Friend");
   const [weatherData, setWeatherData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const navigate = useNavigate();
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState(null);
 
   // Location hook
   const {
@@ -32,67 +33,79 @@ export default function Dashboard() {
     getCurrentPosition
   } = useFarmLocation();
 
+  // Profile context
+  const { profile, loading: profileCtxLoading, error: profileCtxError, refetch: refreshProfile } = useProfile();
+
+  // Extract first name from email or profile
   useEffect(() => {
-    const fetchUserData = async () => {
+    if (profile) {
+      // Try to get first name from profile first
+      const nameFromProfile = profile.first_name || profile.name ||
+        (profile.email ? profile.email.split('@')[0] : null) ||
+        "Friend";
+      const formattedName = nameFromProfile.charAt(0).toUpperCase() + nameFromProfile.slice(1);
+      setFirstName(formattedName);
+    }
+  }, [profile]);
+
+  // Fetch weather data when we have location data (from profile or location hook)
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadWeatherData = async () => {
       try {
-        // Get cached session (avoids refetching profile/session)
+        // Get session token
         const session = await getUserSession();
         if (!session) {
-          navigate("/login");
+          if (isMounted) setError('No active session');
           return;
         }
-        setEmail(session.user.email);
-        // Extract first name from email (before @) or use a default
-        const namePart = session.user.email?.split('@')[0] || "Friend";
-        setFirstName(namePart.charAt(0).toUpperCase() + namePart.slice(1));
+        const token = session.access_token;
 
-        // Use location from hook if available, otherwise fall back to manual fetch
-        if (locData && (locData.latitude !== undefined || locData.longitude !== undefined || locData.location)) {
-          // We have location data from the hook
-          if (locData.latitude !== undefined && locData.longitude !== undefined) {
-            // Fetch weather data using coordinates
-            fetchWeather({ lat: locData.latitude, lon: locData.longitude, token: session.access_token });
-          } else if (locData.location) {
-            // Fetch weather data using location string
-            fetchWeather({ region: locData.location, token: session.access_token });
-          }
-        } else {
-          // Fallback: fetch location from profile directly (original logic)
-          const { data: profile, error: profileError } = await supabase
-            .from('user_profiles')
-            .select('location, latitude, longitude')
-            .eq('user_id', session.user.id)
-            .single();
+        let lat = undefined;
+        let lon = undefined;
+        let region = undefined;
 
-          let location = "Delhi"; // Default location
-          let latitude = undefined;
-          let longitude = undefined;
-
-          if (!profileError && profile) {
-            if (profile.location) location = profile.location;
-            if (profile.latitude !== null) latitude = profile.latitude;
-            if (profile.longitude !== null) longitude = profile.longitude;
-          }
-
-          // Fetch weather data for the location
-          if (latitude !== undefined && longitude !== undefined) {
-            fetchWeather({ lat: latitude, lon: longitude, token: session.access_token });
-          } else if (location) {
-            fetchWeather({ region: location, token: session.access_token });
-          } else {
-            fetchWeather({ region: "Delhi", token: session.access_token }); // Final fallback
+        // Try to get location from profile first
+        if (profile) {
+          if (profile.latitude !== null && profile.longitude !== null) {
+            lat = profile.latitude;
+            lon = profile.longitude;
+          } else if (profile.location) {
+            region = profile.location;
           }
         }
+
+        // Fallback to location hook data
+        if ((lat === undefined || lon === undefined) && locData) {
+          if (locData.latitude !== undefined && locData.longitude !== undefined) {
+            lat = locData.latitude;
+            lon = locData.longitude;
+          } else if (locData.location) {
+            region = locData.location;
+          }
+        }
+
+        // Final fallback
+        if ((lat === undefined || lon === undefined) && !region) {
+          region = "Delhi";
+        }
+
+        // Fetch weather data
+        await fetchWeatherData({ lat, lon, region, token });
       } catch (err) {
-        console.error("Failed to fetch user data:", err);
-        setError("Failed to load user information");
+        if (isMounted) {
+          console.error("Failed to load weather data:", err);
+          setError(`Failed to load weather: ${err.message}`);
+        }
       }
     };
 
-    fetchUserData();
-  }, [navigate, locData]);
+    loadWeatherData();
+    return () => { isMounted = false; };
+  }, [profile, locData]);
 
-  const fetchWeather = async ({ lat, lon, region, token }) => {
+  const fetchWeatherData = useCallback(async ({ lat, lon, region, token }) => {
     try {
       setLoading(true);
       setError(null);
@@ -119,9 +132,21 @@ export default function Dashboard() {
         location: region
       });
 
-      // Check for cached data (to use if request fails)
-      const cachedData = getCachedWeatherData(cacheKey, 30); // Cache for 30 minutes
+      // Try to get cached data first (for instant display)
+      const cachedItem = getCachedWeatherData(cacheKey, 30); // Cache for 30 minutes
 
+      if (cachedItem) {
+        // Show cached data immediately
+        if (isMounted) {
+          setWeatherData({
+            ...cachedItem.data,
+            _isCached: true,
+            _cacheTimestamp: cachedItem.timestamp
+          });
+        }
+      }
+
+      // Fetch fresh data
       const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -143,49 +168,66 @@ export default function Dashboard() {
         }
 
         // If we have cached data, use it with a warning instead of throwing error
-        if (cachedData) {
-          setWeatherData(cachedData);
-          setError(`Using cached data (${formatTimeAgo((Date.now() - cachedData.timestamp)/60000)} ago)`);
+        if (cachedItem) {
+          if (isMounted) {
+            setWeatherData(cachedItem.data);
+            setError(`Using cached data (${formatTimeAgo((Date.now() - cachedItem.timestamp)/60000)} ago)`);
+          }
           return; // Exit early since we're showing cached data
         }
 
-        throw new Error(errorMessage);
+        if (isMounted) throw new Error(errorMessage);
       }
 
       const weatherDataJson = await response.json();
       // Cache the successful response
       cacheWeatherData(cacheKey, weatherDataJson);
-      setWeatherData(weatherDataJson);
-    } catch (err) {
-      // If we have cached data, use it with a warning
-      const cacheKey = generateWeatherCacheKey({
-        latitude: lat,
-        longitude: lon,
-        location: region
-      });
-      const cachedData = getCachedWeatherData(cacheKey, 30); // Cache for 30 minutes
 
-      if (cachedData) {
-        setWeatherData(cachedData);
-        setError(`Using cached data (${formatTimeAgo((Date.now() - cachedData.timestamp)/60000)} ago)`);
-      } else {
-        console.error("Failed to fetch weather data:", err);
-        setError(`Failed to load weather data: ${err.message}`);
+      if (isMounted) {
+        setWeatherData(weatherDataJson);
+        // Clear error if we were showing cached data warning
+        if (error && error.includes('Using cached data')) {
+          setError(null);
+        }
+      }
+    } catch (err) {
+      if (isMounted) {
+        // If we have cached data, use it with a warning
+        const cacheKey = generateWeatherCacheKey({
+          latitude: lat,
+          longitude: lon,
+          location: region
+        });
+        const cachedItem = getCachedWeatherData(cacheKey, 30); // Cache for 30 minutes
+
+        if (cachedItem) {
+          setWeatherData(cachedItem.data);
+          setError(`Using cached data (${formatTimeAgo((Date.now() - cachedItem.timestamp)/60000)} ago)`);
+        } else {
+          console.error("Failed to fetch weather data:", err);
+          setError(`Failed to load weather data: ${err.message}`);
+        }
       }
     } finally {
-      setLoading(false);
+      if (isMounted) setLoading(false);
     }
-  };
+  }, [profile, locData]);
 
-  if (loading) return (
+  // Handle profile loading states from context
+  useEffect(() => {
+    setProfileLoading(profileCtxLoading);
+    setProfileError(profileCtxError);
+  }, [profileCtxLoading, profileCtxError]);
+
+  if (profileLoading && !profile) return (
     <div className="page-container">
       {/* Greeting Card */}
       <div className="greeting-card">
         <div className="greeting-text">
-          Good morning, {firstName}! 👋
+          Good morning, Friend! 👋
         </div>
         <div className="location-weather">
-          Loading weather...
+          Loading profile...
         </div>
       </div>
 
@@ -218,15 +260,15 @@ export default function Dashboard() {
     </div>
   );
 
-  if (error) return (
+  if (profileError && !profile) return (
     <div className="page-container">
       {/* Greeting Card */}
       <div className="greeting-card">
         <div className="greeting-text">
-          Good morning, {firstName}! 👋
+          Good morning, Friend! 👋
         </div>
         <div className="location-weather">
-          Error loading weather
+          Error loading profile
         </div>
       </div>
 
@@ -257,12 +299,21 @@ export default function Dashboard() {
         <p className="tip-card-text">For better crop yield, ensure proper soil preparation by tilling to a depth of 6-8 inches and adding organic compost before planting.</p>
       </div>
 
-      {/* Show cache status when using cached data due to request failure */}
-      {error && error.includes('Using cached data') && (
-        <p style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--color-ink-soft)', marginTop: '1rem' }}>
-          {error}
-        </p>
-      )}
+      {/* Retry button for profile loading errors */}
+      <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+        <button
+          className="btn-primary"
+          onClick={() => {
+            setProfileLoading(true);
+            refreshProfile().catch(() => {
+              setProfileError('Failed to refresh profile. Please try again.');
+              setProfileLoading(false);
+            });
+          }}
+        >
+          Try Again
+        </button>
+      </div>
     </div>
   );
 
@@ -296,15 +347,15 @@ export default function Dashboard() {
               {!weatherData.current || weatherData.current.temperature === null ? (
                 <span>Weather data unavailable</span>
               ) : null}
-              {/* Show cache timestamp if available */}
-              {weatherData._cacheTimestamp && (
+              {/* Show cache status */}
+              {weatherData._isCached && (
                 <p style={{ fontSize: '0.75rem', color: 'var(--color-ink-soft)' }}>
-                  Updated {formatTimeAgo((Date.now() - weatherData._cacheTimestamp) / 60000)} ago
+                  Updated {formatTimeAgo((Date.now() - (weatherData._cacheTimestamp || Date.now())) / 60000)} ago
                 </p>
               )}
             </>
           ) : (
-            <span>Akola, Maharashtra<br />32°C · Partly cloudy</span>
+            <span>Loading weather...</span>
           )}
         </div>
       </div>

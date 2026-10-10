@@ -23,7 +23,7 @@ export default function AppLayout() {
   // Set initial sidebar state based on width and update on resize
   useEffect(() => {
     const checkSidebar = () => {
-      if (window.innerWidth >= 900) {
+      if (window.innerWidth >= 768) {
         setIsSidebarOpen(true);
       } else {
         setIsSidebarOpen(false);
@@ -73,38 +73,44 @@ export default function AppLayout() {
 
       <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-logo">
-          <h2>GramMitra</h2>
-          <p className="sidebar-tagline">किसान का साथी</p>
+          {isSidebarOpen ? (
+            <>
+              <h2>GramMitra</h2>
+              <p className="sidebar-tagline">किसान का साथी</p>
+            </>
+          ) : (
+            <h2 className="collapsed-logo">G</h2>
+          )}
         </div>
         <nav className="sidebar-nav">
-          <NavLink to="/dashboard" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'}>
+          <NavLink to="/dashboard" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'} title="Home">
             <Home /> Home
           </NavLink>
-          <NavLink to="/crop" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'}>
+          <NavLink to="/crop" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'} title="Crop Recommendation">
             <Activity /> Crop Recommendation
           </NavLink>
-          <NavLink to="/weather" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'}>
+          <NavLink to="/weather" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'} title="Weather Advisory">
             <Thermometer /> Weather Advisory
           </NavLink>
-          <NavLink to="/fertilizer" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'}>
+          <NavLink to="/fertilizer" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'} title="Fertilizer Suggestion">
             <Sparkles /> Fertilizer Suggestion
           </NavLink>
-          <NavLink to="/chatbot" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'}>
+          <NavLink to="/chatbot" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'} title="Ask GramMitra">
             <MessageSquare /> Ask GramMitra
           </NavLink>
-          <NavLink to="/complaint" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'}>
+          <NavLink to="/complaint" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'} title="Report a Problem">
             <AlertTriangle /> Report a Problem
           </NavLink>
-          <NavLink to="/prices" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'}>
+          <NavLink to="/prices" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'} title="Market Prices">
             <DollarSign /> Market Prices
           </NavLink>
-          <NavLink to="/schemes" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'}>
+          <NavLink to="/schemes" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'} title="Scheme Guidance">
             <Building /> Scheme Guidance
           </NavLink>
-          <NavLink to="/profile" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'}>
+          <NavLink to="/profile" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'} title="Profile">
             <User /> Profile
           </NavLink>
-          <NavLink to="/profile" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'}>
+          <NavLink to="/profile" end className={({ isActive }) => isActive ? 'sidebar-link active' : 'sidebar-link'} title="Log Out">
             <LogOut /> Log Out
           </NavLink>
         </nav>

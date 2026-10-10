@@ -12,6 +12,7 @@ import MarketPrices from "./pages/MarketPrices.jsx";
 import SchemeGuidance from "./pages/SchemeGuidance.jsx";
 import Profile from "./pages/Profile.jsx";
 import AppLayout from "./components/AppLayout.jsx";
+import { ProfileProvider } from './lib/profileContext';
 import { initUserSession } from './lib/userSession';
 
 // Initialize user session caching
@@ -61,16 +62,20 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route element={<AppLayout />}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="crop" element={<CropRecommend />} />
-            <Route path="weather" element={<WeatherAdvisory />} />
-            <Route path="fertilizer" element={<FertilizerSuggest />} />
-            <Route path="chatbot" element={<Chatbot />} />
-            <Route path="complaint" element={<ComplaintForm />} />
-            <Route path="prices" element={<MarketPrices />} />
-            <Route path="schemes" element={<SchemeGuidance />} />
-            <Route path="profile" element={<Profile />} />
+            <ProfileProvider>
+              <Routes>
+                <Route index element={<Navigate to="/dashboard" replace />} />
+                <Route path="dashboard" element={<Dashboard />} />
+                <Route path="crop" element={<CropRecommend />} />
+                <Route path="weather" element={<WeatherAdvisory />} />
+                <Route path="fertilizer" element={<FertilizerSuggest />} />
+                <Route path="chatbot" element={<Chatbot />} />
+                <Route path="complaint" element={<ComplaintForm />} />
+                <Route path="prices" element={<MarketPrices />} />
+                <Route path="schemes" element={<SchemeGuidance />} />
+                <Route path="profile" element={<Profile />} />
+              </Routes>
+            </ProfileProvider>
           </Route>
         </Routes>
       </ErrorBoundary>

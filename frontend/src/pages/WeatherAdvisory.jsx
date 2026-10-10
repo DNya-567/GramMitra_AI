@@ -1,15 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../api/supabaseClient';
 import useFarmLocation from '../utils/useFarmLocation';
 import { cacheWeatherData, getCachedWeatherData, generateWeatherCacheKey, formatTimeAgo } from '../lib/location.jsx';
 import { getUserSession } from '../lib/userSession';
+import { useProfile } from '../lib/profileContext.jsx';
 
 export default function WeatherAdvisory() {
+  const navigate = useNavigate();
   const [weatherData, setWeatherData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const navigate = useNavigate();
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState(false);
+  const isMountedRef = useRef(false);
 
   // Location hook
   const {
@@ -21,6 +25,9 @@ export default function WeatherAdvisory() {
     saveLocation,
     loadLocationFromProfile
   } = useFarmLocation();
+
+  // Profile context
+  const { profile, loading: profileCtxLoading, error: profileCtxError } = useProfile();
 
   // Helper function to format date as "Thu, 8 Oct"
   const formatDate = (dateString) => {
@@ -50,36 +57,77 @@ export default function WeatherAdvisory() {
     return 'Your Location';
   };
 
+  // Load location from profile when component mounts
   useEffect(() => {
-    // Load location from profile when component mounts
     loadLocationFromProfile();
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
   }, []);
 
+  // Handle profile loading states from context
   useEffect(() => {
-    if (location) {
-      (async () => {
-        try {
-          // Get cached session (avoids refetching profile/session)
-          const session = await getUserSession();
-          const token = session?.access_token;
-          if (token) {
-            if (location.latitude !== undefined && location.longitude !== undefined) {
-              fetchWeather({ lat: location.latitude, lon: location.longitude, token });
-            } else if (location.location) {
-              fetchWeather({ region: location.location, token });
-            }
-            // else: we have no lat/lon and no location string -> do nothing (will show setup UI)
-          } else {
-            setError('No session token');
-          }
-        } catch (err) {
-          setError(err.message);
-        }
-      })();
-    }
-  }, [location]);
+    setProfileLoading(profileCtxLoading);
+    setProfileError(profileCtxError);
+  }, [profileCtxLoading, profileCtxError]);
 
-  const fetchWeather = async ({ lat, lon, region, token }) => {
+  // Fetch weather data when we have location data (from profile or location hook)
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadWeatherData = async () => {
+      try {
+        // Get session token
+        const session = await getUserSession();
+        if (!session) {
+          if (isMountedRef.current) setError('No active session');
+          return;
+        }
+        const token = session.access_token;
+
+        let lat = undefined;
+        let lon = undefined;
+        let region = undefined;
+
+        // Try to get location from profile first
+        if (profile) {
+          if (profile.latitude !== null && profile.longitude !== null) {
+            lat = profile.latitude;
+            lon = profile.longitude;
+          } else if (profile.location) {
+            region = profile.location;
+          }
+        }
+
+        // Fallback to location hook data
+        if ((lat === undefined || lon === undefined) && locData) {
+          if (locData.latitude !== undefined && locData.longitude !== undefined) {
+            lat = locData.latitude;
+            lon = locData.longitude;
+          } else if (locData.location) {
+            region = locData.location;
+          }
+        }
+
+        // Final fallback
+        if ((lat === undefined || lon === undefined) && !region) {
+          region = "Delhi";
+        }
+
+        // Fetch weather data
+        await fetchWeatherData({ lat, lon, region, token });
+      } catch (err) {
+        if (isMountedRef.current) {
+          console.error("Failed to load weather data:", err);
+          setError(`Failed to load weather: ${err.message}`);
+        }
+      }
+    };
+
+    loadWeatherData();
+    return () => { isMountedRef.current = false; };
+  }, [profile, location]);
+
+  const fetchWeatherData = useCallback(async ({ lat, lon, region, token }) => {
     try {
       setLoading(true);
       setError(null);
@@ -107,14 +155,21 @@ export default function WeatherAdvisory() {
         location: region
       });
 
-      // Try to get cached data first (optional - we'll still make the request)
-      const cachedData = getCachedWeatherData(cacheKey, 30); // Cache for 30 minutes
-      // Note: We don't use cached data here to always get fresh data,
-      // but we'll use it if the request fails
+      // Try to get cached data first (for instant display)
+      const cachedItem = getCachedWeatherData(cacheKey, 30); // Cache for 30 minutes
 
-      console.debug('Fetching weather with params:', { lat, lon, region });
-      console.debug('Request URL:', url);
+      if (cachedItem) {
+        // Show cached data immediately
+        if (isMountedRef.current) {
+          setWeatherData({
+            ...cachedItem.data,
+            _isCached: true,
+            _cacheTimestamp: cachedItem.timestamp
+          });
+        }
+      }
 
+      // Fetch fresh data
       const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -136,38 +191,49 @@ export default function WeatherAdvisory() {
         }
 
         // If we have cached data, use it with a warning instead of throwing error
-        if (cachedData) {
-          setWeatherData(cachedData);
-          setError(`Using cached data (${formatTimeAgo((Date.now() - cachedData.timestamp)/60000)} ago)`);
+        if (cachedItem) {
+          if (isMountedRef.current) {
+            setWeatherData(cachedItem.data);
+            setError(`Using cached data (${formatTimeAgo((Date.now() - cachedItem.timestamp)/60000)} ago)`);
+          }
           return; // Exit early since we're showing cached data
         }
 
-        throw new Error(errorMessage);
+        if (isMountedRef.current) throw new Error(errorMessage);
       }
 
       const data = await response.json();
       // Cache the successful response
       cacheWeatherData(cacheKey, data);
-      setWeatherData(data);
-    } catch (err) {
-      // If we have cached data, use it with a warning
-      const cacheKey = generateWeatherCacheKey({
-        latitude: lat,
-        longitude: lon,
-        location: region
-      });
-      const cachedData = getCachedWeatherData(cacheKey, 30); // Cache for 30 minutes
 
-      if (cachedData) {
-        setWeatherData(cachedData);
-        setError(`Using cached data (${formatTimeAgo((Date.now() - cachedData.timestamp)/60000)} ago)`);
-      } else {
-        setError(err.message);
+      if (isMountedRef.current) {
+        setWeatherData(data);
+        // Clear error if we were showing cached data warning
+        if (error && error.includes('Using cached data')) {
+          setError(null);
+        }
+      }
+    } catch (err) {
+      if (isMountedRef.current) {
+        // If we have cached data, use it with a warning
+        const cacheKey = generateWeatherCacheKey({
+          latitude: lat,
+          longitude: lon,
+          location: region
+        });
+        const cachedItem = getCachedWeatherData(cacheKey, 30); // Cache for 30 minutes
+
+        if (cachedItem) {
+          setWeatherData(cachedItem.data);
+          setError(`Using cached data (${formatTimeAgo((Date.now() - cachedItem.timestamp)/60000)} ago)`);
+        } else {
+          setError(err.message);
+        }
       }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
-  };
+  }, [profile, location]);
 
   const handleRefresh = async () => {
     try {
@@ -178,14 +244,29 @@ export default function WeatherAdvisory() {
         return;
       }
       if (location && location.latitude !== undefined && location.longitude !== undefined) {
-        fetchWeather({ lat: location.latitude, lon: location.longitude, token });
+        fetchWeatherData({ lat: location.latitude, lon: location.longitude, token });
       } else if (location && location.location) {
-        fetchWeather({ region: location.location, token });
+        fetchWeatherData({ region: location.location, token });
       }
     } catch (err) {
       setError(err.message);
     }
   };
+
+  if (profileLoading && !profile) return (
+    <div className="centered-container">
+      <p>Loading weather advisory...</p>
+    </div>
+  );
+
+  if (profileError && !profile) return (
+    <div className="centered-container">
+      <p className="error-text">Error loading profile data</p>
+      <button className="btn-primary" onClick={() => window.location.reload()}>
+        Try Again
+      </button>
+    </div>
+  );
 
   if (loading) return (
     <div className="centered-container">
@@ -201,6 +282,13 @@ export default function WeatherAdvisory() {
       </button>
     </div>
   );
+
+  {/* Show cache status when using cached data due to request failure */}
+  {error && error.includes('Using cached data') && (
+    <p style={{ textAlign: 'right', fontSize: '0.75rem', color: 'var(--color-ink-soft)' }}>
+      {error}
+    </p>
+  )}
 
   // If no location is saved, show location setup UI
   if (!location || (location.latitude === undefined && location.longitude === undefined && !location.location)) {

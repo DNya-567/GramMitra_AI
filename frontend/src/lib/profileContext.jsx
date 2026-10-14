@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../api/supabaseClient';
+import { getUserSession } from './userSession';
 
 const PROFILE_STORAGE_KEY = 'grammitra_user_profile';
 const PROFILE_CACHE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
@@ -35,30 +36,40 @@ export function ProfileProvider({ children }) {
       setLoading(true);
       setError(null);
 
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await getUserSession();
       if (!session) {
         // No session, set loading to false and return
         setLoading(false);
         return null;
       }
 
-      const { data, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .single();
+      const response = await fetch('/api/v1/profile', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
 
-      if (profileError) throw profileError;
+      if (!response.ok) {
+        // If we get a 401 or 403, maybe session invalid
+        if (response.status === 401 || response.status === 403) {
+          // Clear session? We'll let the auth listener handle logout?
+          // For now, just set error
+          throw new Error('Unauthorized');
+        }
+        throw new Error(`Failed to fetch profile: ${response.status}`);
+      }
+
+      const profileData = await response.json();
 
       // Cache the profile
-      const profileData = {
-        data: data,
+      const cached = {
+        data: profileData,
         timestamp: Date.now()
       };
-      localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profileData));
+      localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(cached));
 
-      setProfile(data);
-      return data;
+      setProfile(profileData);
+      return profileData;
     } catch (err) {
       console.error('Failed to fetch profile:', err);
       setError(err.message);

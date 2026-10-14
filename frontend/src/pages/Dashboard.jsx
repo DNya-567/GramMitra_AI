@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Activity, Thermometer, Sparkles, MessageSquare, AlertTriangle, DollarSign, Building } from "lucide-react";
 import useFarmLocation from "../utils/useFarmLocation";
-import { cacheWeatherData, getCachedWeatherData, generateWeatherCacheKey, formatTimeAgo } from "../lib/location.jsx";
+import { cacheWeatherData, getCachedWeatherData, generateWeatherCacheKey, formatTimeAgo } from "../lib/location.js";
 import { getUserSession } from "../lib/userSession";
 import { useProfile } from "../lib/profileContext.jsx";
+import { getPlaceLabel } from "../lib/place";
 
 const FEATURES = [
   { title: "Crop Recommendation", desc: "Get a crop suggestion based on your soil and rainfall.", path: "/crop", color: "#33633c", icon: Activity },
@@ -24,6 +25,7 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState(null);
+  const isMountedRef = useRef(false);
 
   // Location hook
   const {
@@ -50,62 +52,79 @@ export default function Dashboard() {
 
   // Fetch weather data when we have location data (from profile or location hook)
   useEffect(() => {
-    let isMounted = true;
+    isMountedRef.current = true;
 
     const loadWeatherData = async () => {
+      // Get session token
+      const session = await getUserSession();
+      if (!session) {
+        if (isMountedRef.current) setError('No active session');
+        return;
+      }
+      const token = session.access_token;
+
+      let lat = undefined;
+      let lon = undefined;
+      let region = undefined;
+
+      // Try to get location from profile first
+      if (profile) {
+        if (profile.latitude !== null && profile.longitude !== null) {
+          lat = profile.latitude;
+          lon = profile.longitude;
+        } else if (profile.location) {
+          region = profile.location;
+        }
+      }
+
+      // Fallback to location hook data
+      if ((lat === undefined || lon === undefined) && locData) {
+        if (locData.latitude !== undefined && locData.longitude !== undefined) {
+          lat = locData.latitude;
+          lon = locData.longitude;
+        } else if (locData.location) {
+          region = locData.location;
+        }
+      }
+
+      // Final fallback
+      if ((lat === undefined || lon === undefined) && !region) {
+        region = "Delhi";
+      }
+
+      // Create abort controller for this request
+      const controller = new AbortController();
+      // Set timeout to abort after 15 seconds
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, 15000);
+
       try {
-        // Get session token
-        const session = await getUserSession();
-        if (!session) {
-          if (isMounted) setError('No active session');
-          return;
-        }
-        const token = session.access_token;
-
-        let lat = undefined;
-        let lon = undefined;
-        let region = undefined;
-
-        // Try to get location from profile first
-        if (profile) {
-          if (profile.latitude !== null && profile.longitude !== null) {
-            lat = profile.latitude;
-            lon = profile.longitude;
-          } else if (profile.location) {
-            region = profile.location;
-          }
-        }
-
-        // Fallback to location hook data
-        if ((lat === undefined || lon === undefined) && locData) {
-          if (locData.latitude !== undefined && locData.longitude !== undefined) {
-            lat = locData.latitude;
-            lon = locData.longitude;
-          } else if (locData.location) {
-            region = locData.location;
-          }
-        }
-
-        // Final fallback
-        if ((lat === undefined || lon === undefined) && !region) {
-          region = "Delhi";
-        }
-
-        // Fetch weather data
-        await fetchWeatherData({ lat, lon, region, token });
+        // Fetch weather data with abort signal
+        await fetchWeatherData({ lat, lon, region, token, signal: controller.signal });
       } catch (err) {
-        if (isMounted) {
-          console.error("Failed to load weather data:", err);
-          setError(`Failed to load weather: ${err.message}`);
+        // If the request was aborted, do not set error or update state
+        if (err.name !== 'AbortError') {
+          if (isMountedRef.current) {
+            console.error("Failed to load weather data:", err);
+            setError(`Failed to load weather: ${err.message}`);
+          }
         }
+      } finally {
+        // Clear the timeout
+        clearTimeout(timeoutId);
+        // Set loading to false in finally block for current run
+        if (isMountedRef.current) setLoading(false);
       }
     };
 
     loadWeatherData();
-    return () => { isMounted = false; };
+    return () => {
+      isMountedRef.current = false;
+    };
   }, [profile, locData]);
 
-  const fetchWeatherData = useCallback(async ({ lat, lon, region, token }) => {
+  const fetchWeatherData = useCallback(async ({ lat, lon, region, token, signal }) => {
     try {
       setLoading(true);
       setError(null);
@@ -137,7 +156,7 @@ export default function Dashboard() {
 
       if (cachedItem) {
         // Show cached data immediately
-        if (isMounted) {
+        if (isMountedRef.current) {
           setWeatherData({
             ...cachedItem.data,
             _isCached: true,
@@ -151,7 +170,8 @@ export default function Dashboard() {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
-        }
+        },
+        signal: signal
       });
 
       if (!response.ok) {
@@ -169,21 +189,21 @@ export default function Dashboard() {
 
         // If we have cached data, use it with a warning instead of throwing error
         if (cachedItem) {
-          if (isMounted) {
+          if (isMountedRef.current) {
             setWeatherData(cachedItem.data);
             setError(`Using cached data (${formatTimeAgo((Date.now() - cachedItem.timestamp)/60000)} ago)`);
           }
           return; // Exit early since we're showing cached data
         }
 
-        if (isMounted) throw new Error(errorMessage);
+        if (isMountedRef.current) throw new Error(errorMessage);
       }
 
       const weatherDataJson = await response.json();
       // Cache the successful response
       cacheWeatherData(cacheKey, weatherDataJson);
 
-      if (isMounted) {
+      if (isMountedRef.current) {
         setWeatherData(weatherDataJson);
         // Clear error if we were showing cached data warning
         if (error && error.includes('Using cached data')) {
@@ -191,7 +211,12 @@ export default function Dashboard() {
         }
       }
     } catch (err) {
-      if (isMounted) {
+      if (isMountedRef.current) {
+        // If the request was aborted, do not set error or update state
+        if (err.name === 'AbortError') {
+          // Request was aborted, ignore
+          return;
+        }
         // If we have cached data, use it with a warning
         const cacheKey = generateWeatherCacheKey({
           latitude: lat,
@@ -209,7 +234,7 @@ export default function Dashboard() {
         }
       }
     } finally {
-      if (isMounted) setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   }, [profile, locData]);
 
@@ -325,37 +350,33 @@ export default function Dashboard() {
           Good morning, {firstName}! 👋
         </div>
         <div className="location-weather">
-          {weatherData ? (
+          {profile ? (
             <>
-              {(weatherData.place_name ||
-                (weatherData.latitude !== undefined && weatherData.longitude !== undefined ?
-                 `Lat: ${weatherData.latitude}, Lon: ${weatherData.longitude}` :
-                 weatherData.region || 'Your Location')) && (
+              <span>{getPlaceLabel(profile)}</span><br />
+              {weatherData ? (
                 <>
-                  <span>{weatherData.place_name ||
-                    (weatherData.latitude !== undefined && weatherData.longitude !== undefined ?
-                     `Lat: ${weatherData.latitude}, Lon: ${weatherData.longitude}` :
-                     weatherData.region || 'Your Location')}</span><br />
+                  {weatherData.current && weatherData.current.temperature !== null && (
+                    <>
+                      {Math.round(weatherData.current.temperature)}°C ·
+                      {weatherData.current.condition || "Partly cloudy"}
+                    </>
+                  )}
+                  {!weatherData.current || weatherData.current.temperature === null ? (
+                    <span>Weather data unavailable</span>
+                  ) : null}
+                  {/* Show cache status */}
+                  {weatherData._isCached && (
+                    <p style={{ fontSize: '0.75rem', color: 'var(--color-ink-soft)' }}>
+                      Updated {formatTimeAgo((Date.now() - (weatherData._cacheTimestamp || Date.now())) / 60000)} ago
+                    </p>
+                  )}
                 </>
-              )}
-              {weatherData.current && weatherData.current.temperature !== null && (
-                <>
-                  {Math.round(weatherData.current.temperature)}°C ·
-                  {weatherData.current.condition || "Partly cloudy"}
-                </>
-              )}
-              {!weatherData.current || weatherData.current.temperature === null ? (
-                <span>Weather data unavailable</span>
-              ) : null}
-              {/* Show cache status */}
-              {weatherData._isCached && (
-                <p style={{ fontSize: '0.75rem', color: 'var(--color-ink-soft)' }}>
-                  Updated {formatTimeAgo((Date.now() - (weatherData._cacheTimestamp || Date.now())) / 60000)} ago
-                </p>
+              ) : (
+                <span>Loading weather...</span>
               )}
             </>
           ) : (
-            <span>Loading weather...</span>
+            <span>Loading profile...</span>
           )}
         </div>
       </div>

@@ -53,7 +53,7 @@ export const getCurrentLocation = () => {
         maximumAge: 0
       }
     );
-  );
+  });
 };
 
 /**
@@ -134,6 +134,49 @@ export const getLocationFromProfile = async () => {
 };
 
 /**
+ * Reverse geocode latitude and longitude to get village, district, state
+ * @param {number} latitude
+ * @param {number} longitude
+ * @returns {Promise<Object>} Promise resolving to {village, district, state, display_name}
+ */
+export const reverseGeocode = async (latitude, longitude) => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error('No active session');
+    }
+
+    const response = await fetch(`/api/v1/location/reverse?latitude=${latitude}&longitude=${longitude}`, {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Reverse geocoding failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    // Assuming the backend returns {village, district, state, display_name}
+    return {
+      village: data.village || null,
+      district: data.district || null,
+      state: data.state || null,
+      location: data.display_name || null // We'll store the display_name in the location field as a fallback
+    };
+  } catch (error) {
+    console.error('Reverse geocode error:', error);
+    // Return null for the fields so that the caller knows it failed
+    return {
+      village: null,
+      district: null,
+      state: null,
+      location: null
+    };
+  }
+};
+
+/**
  * Weather cache utility
  * Stores last weather response per location with timestamp in localStorage
  */
@@ -160,7 +203,7 @@ export const cacheWeatherData = (cacheKey, data) => {
  * Get cached weather data for a location if not expired
  * @param {string} cacheKey - Unique key for the location
  * @param {number} maxAgeMinutes - Maximum age in minutes (default: 10)
- * @returns {Object|null} Cached data or null if not found/expired
+ * @returns {Object|null} Cached item (with data and timestamp) or null if not found/expired
  */
 export const getCachedWeatherData = (cacheKey, maxAgeMinutes = 10) => {
   try {
@@ -175,7 +218,7 @@ export const getCachedWeatherData = (cacheKey, maxAgeMinutes = 10) => {
       return null;
     }
 
-    return parsed.data;
+    return parsed;
   } catch (e) {
     console.warn('Failed to get cached weather data:', e);
     return null;

@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../api/supabaseClient';
 import useFarmLocation from '../utils/useFarmLocation';
-import { cacheWeatherData, getCachedWeatherData, generateWeatherCacheKey, formatTimeAgo } from '../lib/location.jsx';
+import { cacheWeatherData, getCachedWeatherData, generateWeatherCacheKey, formatTimeAgo } from '../lib/location.js';
 import { getUserSession } from '../lib/userSession';
 import { useProfile } from '../lib/profileContext.jsx';
+import { getPlaceLabel } from '../lib/place';
 
 export default function WeatherAdvisory() {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ export default function WeatherAdvisory() {
   const [error, setError] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState(false);
+  const [refreshCounter, setRefreshCounter] = useState(0);
   const isMountedRef = useRef(false);
 
   // Location hook
@@ -28,6 +30,14 @@ export default function WeatherAdvisory() {
 
   // Profile context
   const { profile, loading: profileCtxLoading, error: profileCtxError } = useProfile();
+
+  // Is mounted ref for cleanup
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Helper function to format date as "Thu, 8 Oct"
   const formatDate = (dateString) => {
@@ -51,17 +61,12 @@ export default function WeatherAdvisory() {
     if (typeof loc.location === 'string' && loc.location.trim() !== '') {
       return loc.location;
     }
-    if (typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
-      return `Lat: ${loc.latitude}, Lon: ${loc.longitude}`;
-    }
     return 'Your Location';
   };
 
   // Load location from profile when component mounts
   useEffect(() => {
     loadLocationFromProfile();
-    isMountedRef.current = true;
-    return () => { isMountedRef.current = false; };
   }, []);
 
   // Handle profile loading states from context
@@ -72,62 +77,74 @@ export default function WeatherAdvisory() {
 
   // Fetch weather data when we have location data (from profile or location hook)
   useEffect(() => {
-    let isMounted = true;
-
     const loadWeatherData = async () => {
+      // Get session token
+      const session = await getUserSession();
+      if (!session) {
+        if (isMountedRef.current) setError('No active session');
+        return;
+      }
+      const token = session.access_token;
+
+      let lat = undefined;
+      let lon = undefined;
+      let region = undefined;
+
+      // Try to get location from profile first
+      if (profile) {
+        if (profile.latitude !== null && profile.longitude !== null) {
+          lat = profile.latitude;
+          lon = profile.longitude;
+        } else if (profile.location) {
+          region = profile.location;
+        }
+      }
+
+      // Fallback to location hook data
+      if ((lat === undefined || lon === undefined) && location) {
+        if (location.latitude !== undefined && location.longitude !== undefined) {
+          lat = location.latitude;
+          lon = location.longitude;
+        } else if (location.location) {
+          region = location.location;
+        }
+      }
+
+      // Final fallback
+      if ((lat === undefined || lon === undefined) && !region) {
+        region = "Delhi";
+      }
+
+      // Create abort controller for this request
+      const controller = new AbortController();
+      // Set timeout to abort after 15 seconds
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, 15000);
+
       try {
-        // Get session token
-        const session = await getUserSession();
-        if (!session) {
-          if (isMountedRef.current) setError('No active session');
-          return;
-        }
-        const token = session.access_token;
-
-        let lat = undefined;
-        let lon = undefined;
-        let region = undefined;
-
-        // Try to get location from profile first
-        if (profile) {
-          if (profile.latitude !== null && profile.longitude !== null) {
-            lat = profile.latitude;
-            lon = profile.longitude;
-          } else if (profile.location) {
-            region = profile.location;
-          }
-        }
-
-        // Fallback to location hook data
-        if ((lat === undefined || lon === undefined) && locData) {
-          if (locData.latitude !== undefined && locData.longitude !== undefined) {
-            lat = locData.latitude;
-            lon = locData.longitude;
-          } else if (locData.location) {
-            region = locData.location;
-          }
-        }
-
-        // Final fallback
-        if ((lat === undefined || lon === undefined) && !region) {
-          region = "Delhi";
-        }
-
-        // Fetch weather data
-        await fetchWeatherData({ lat, lon, region, token });
+        // Fetch weather data with abort signal
+        await fetchWeatherData({ lat, lon, region, token, signal: controller.signal });
       } catch (err) {
-        if (isMountedRef.current) {
-          console.error("Failed to load weather data:", err);
-          setError(`Failed to load weather: ${err.message}`);
+        // If the request was aborted, do not set error or update state
+        if (err.name !== 'AbortError') {
+          if (isMountedRef.current) {
+            console.error("Failed to load weather data:", err);
+            setError(`Failed to load weather: ${err.message}`);
+          }
         }
+      } finally {
+        // Clear the timeout
+        clearTimeout(timeoutId);
+        // Set loading to false in finally block for current run
+        if (isMountedRef.current) setLoading(false);
       }
     };
 
     loadWeatherData();
-    return () => { isMountedRef.current = false; };
-  }, [profile, location]);
+  }, [profile, location, refreshCounter]);
 
-  const fetchWeatherData = useCallback(async ({ lat, lon, region, token }) => {
+  const fetchWeatherData = useCallback(async ({ lat, lon, region, token, signal }) => {
     try {
       setLoading(true);
       setError(null);
@@ -174,7 +191,8 @@ export default function WeatherAdvisory() {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json"
-        }
+        },
+        signal: signal
       });
 
       if (!response.ok) {
@@ -215,6 +233,11 @@ export default function WeatherAdvisory() {
       }
     } catch (err) {
       if (isMountedRef.current) {
+        // If the request was aborted, do not set error or update state
+        if (err.name === 'AbortError') {
+          // Request was aborted, ignore
+          return;
+        }
         // If we have cached data, use it with a warning
         const cacheKey = generateWeatherCacheKey({
           latitude: lat,
@@ -235,22 +258,8 @@ export default function WeatherAdvisory() {
     }
   }, [profile, location]);
 
-  const handleRefresh = async () => {
-    try {
-      const session = await getUserSession();
-      const token = session?.access_token;
-      if (!token) {
-        setError('No session token');
-        return;
-      }
-      if (location && location.latitude !== undefined && location.longitude !== undefined) {
-        fetchWeatherData({ lat: location.latitude, lon: location.longitude, token });
-      } else if (location && location.location) {
-        fetchWeatherData({ region: location.location, token });
-      }
-    } catch (err) {
-      setError(err.message);
-    }
+  const handleRefresh = () => {
+    setRefreshCounter((prev) => prev + 1);
   };
 
   if (profileLoading && !profile) return (
@@ -314,7 +323,7 @@ export default function WeatherAdvisory() {
                     const session = await getUserSession();
                     const token = session?.access_token;
                     if (token) {
-                      fetchWeather({ lat: pos.latitude, lon: pos.longitude, token });
+                      fetchWeatherData({ lat: pos.latitude, lon: pos.longitude, token });
                     } else {
                       setError('No session token');
                     }
@@ -368,7 +377,7 @@ export default function WeatherAdvisory() {
   return (
     <div className="centered-container">
       <div className="dashboard-header">
-        <h1>Weather Advisory for {getDisplayName(location)}</h1>
+        <h1>Weather Advisory for {getPlaceLabel(profile)}</h1>
         <button className="btn-text" onClick={handleRefresh}>
           Refresh Data
         </button>
@@ -383,19 +392,13 @@ export default function WeatherAdvisory() {
 
       {! (weatherData?.error) && weatherData?.current && (
         <>
-          {/* New advisory info section near the top */}
-          <div className="dashboard-tile" style={{ borderLeftColor: 'var(--color-success)' }}>
-            <h2>Advisory Summary</h2>
-            {weatherData?.best_spray_window && weatherData?.best_spray_window?.length > 0 && (
-              <>
-                <p><strong>Best Spray Window:</strong> {weatherData?.best_spray_window?.slice(0, 5).join(' • ')}</p>
-                {weatherData?.best_spray_window?.length > 5 && <p><em>+ {weatherData?.best_spray_window?.length - 5} more slots</em></p>}
-              </>
-            )}
-            {(!weatherData?.best_spray_window || weatherData?.best_spray_window?.length === 0) && (
-              <p><em>No optimal spray window found for today/tomorrow (wind &lt; 15 km/h, no rain)</em></p>
-            )}
-          </div>
+          {weatherData?.best_spray_window && weatherData?.best_spray_window?.length > 0 && (
+            <div className="dashboard-tile" style={{ borderLeftColor: 'var(--color-success)' }}>
+              <h2>Advisory Summary</h2>
+              <p><strong>Best Spray Window:</strong> {weatherData?.best_spray_window?.slice(0, 5).join(' • ')}</p>
+              {weatherData?.best_spray_window?.length > 5 && <p><em>+ {weatherData?.best_spray_window?.length - 5} more ranges</em></p>}
+            </div>
+          )}
 
           <div className="dashboard-tile" style={{ borderLeftColor: 'var(--color-sky)' }}>
             <h2>Current Conditions</h2>

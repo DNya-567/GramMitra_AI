@@ -11,10 +11,91 @@ from typing import Optional, Dict, Any
 _weather_cache: Dict[str, Dict[str, Any]] = {}
 CACHE_DURATION = timedelta(minutes=10)
 
+# Cache for place names (reverse geocoding) with timestamp
+# Format: {lat_lon_key: {"name": place_name, "timestamp": datetime}}
+_place_name_cache: Dict[str, Dict[str, Any]] = {}
+PLACE_NAME_CACHE_DURATION = timedelta(hours=24)  # 24 hours
+
+# State for place name rate limiting
+_place_name_state = {'last_request_time': 0.0}
+_place_name_min_request_interval = 1.0  # 1 second
+_place_name_lock = asyncio.Lock()
+
 logger = logging.getLogger(__name__)
 
 # Shared HTTP client (set by main.app)
 httpx_client: Optional[httpx.AsyncClient] = None
+
+
+async def _get_place_name(latitude: float, longitude: float) -> Optional[str]:
+    """Get place name (display_name) for latitude and longitude using Nominatim with caching and rate limiting."""
+    # Create cache key rounded to 2 decimal places
+    lat_key = round(latitude, 2)
+    lon_key = round(longitude, 2)
+    cache_key = f"{lat_key},{lon_key}"
+
+    # First check cache without lock
+    now = time.time()
+    if cache_key in _place_name_cache:
+        cached_entry = _place_name_cache[cache_key]
+        if now - cached_entry["timestamp"] < PLACE_NAME_CACHE_DURATION.total_seconds():
+            return cached_entry["name"]
+
+    # If not in cache or expired, acquire lock for rate limiting and potential update
+    async with _place_name_lock:
+        # Double-check cache after acquiring lock
+        now = time.time()
+        if cache_key in _place_name_cache:
+            cached_entry = _place_name_cache[cache_key]
+            if now - cached_entry["timestamp"] < PLACE_NAME_CACHE_DURATION.total_seconds():
+                return cached_entry["name"]
+
+        # Rate limiting: ensure at least _place_name_min_request_interval seconds since last request
+        elapsed = now - _place_name_state['last_request_time']
+        if elapsed < _place_name_min_request_interval:
+            await asyncio.sleep(_place_name_min_request_interval - elapsed)
+        # Update last request time to the time we are about to make the request
+        _place_name_state['last_request_time'] = time.time()
+
+        # Prepare request to Nominatim
+        url = "https://nominatim.openstreetmap.org/reverse"
+        params = {
+            "format": "jsonv2",
+            "lat": latitude,
+            "lon": longitude,
+            "zoom": 10,
+            "addressdetails": 1
+        }
+        headers = {
+            "User-Agent": os.getenv("NOMINATIM_USER_AGENT", "GramMitra/1.0")
+        }
+
+        # Make request using shared client if available, otherwise create a temporary one
+        try:
+            client_to_use = httpx_client
+            if client_to_use is None:
+                # Fallback: create a temporary client (should not happen in production)
+                client_to_use = httpx.AsyncClient()
+
+            response = await client_to_use.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+            # Extract display_name
+            display_name = data.get("display_name")
+            if display_name:
+                # Update cache
+                _place_name_cache[cache_key] = {
+                    "name": display_name,
+                    "timestamp": time.time()
+                }
+                return display_name
+            else:
+                return None
+        except Exception as e:
+            logger.warning(f"Failed to get place name for lat={latitude}, lon={longitude}: {str(e)}")
+            # On error, return None (so we fall back to coordinates or region)
+            return None
 
 
 async def get_advisory(region: Optional[str] = None, lat: Optional[float] = None, lon: Optional[float] = None) -> dict:
@@ -69,8 +150,12 @@ async def get_advisory(region: Optional[str] = None, lat: Optional[float] = None
             # Use provided coordinates directly
             latitude = lat
             longitude = lon
-            # Try to get place name from reverse geocoding or use region as fallback
-            display_name = region if region and region.strip() else f"Lat:{lat}, Lon:{lon}"
+            if region and region.strip():
+                display_name = region.strip()
+            else:
+                # Try to get cached place name from reverse geocoding
+                display_name = await _get_place_name(latitude, longitude)
+                # If we don't have a cached place name, display_name remains None (so place_name in result will be null)
             logger.debug(f"Using provided coordinates: lat={latitude}, lon={longitude}")
         else:
             # Step 1: Geocode the region to get latitude/longitude
@@ -219,12 +304,15 @@ def process_open_meteo_data(data: dict, region_name: str, latitude: float, longi
             hourly_wind_speed = hourly.get("wind_speed_10m", [])
             hourly_precipitation = hourly.get("precipitation", [])
 
-            # Calculate best spray window for today and tomorrow
+            # Calculate best spray window for today and tomorrow (06:00-19:00 local time)
             if hourly_times and hourly_wind_speed and hourly_precipitation:
                 now = datetime.now()
                 today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
                 tomorrow_start = today_start + timedelta(days=1)
                 day_after_tomorrow_start = today_start + timedelta(days=2)
+
+                # We'll collect valid spray hours by day
+                spray_hours_by_day = {}  # key: date (datetime.date), value: list of hours (integers) that are valid
 
                 # Check next 48 hours (today and tomorrow)
                 for i, time_str in enumerate(hourly_times[:48]):  # Next 48 hours
@@ -234,17 +322,48 @@ def process_open_meteo_data(data: dict, region_name: str, latitude: float, longi
                             dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
                             # Check if it's today or tomorrow
                             if today_start <= dt < day_after_tomorrow_start:
-                                wind_speed = hourly_wind_speed[i]
-                                precipitation = hourly_precipitation[i]
-                                # Check conditions: wind < 15 km/h and no precipitation
-                                if wind_speed is not None and precipitation is not None:
-                                    if wind_speed < 15 and precipitation == 0:
-                                        # Format as "HH:MM"
-                                        time_formatted = dt.strftime("%H:%M")
-                                        best_spray_window.append(time_formatted)
+                                # Only consider hours between 06:00 and 19:00 local time (inclusive of 06:00, exclusive of 19:00)
+                                if 6 <= dt.hour <= 18:  # dt.hour from 6 to 18 inclusive
+                                    wind_speed = hourly_wind_speed[i]
+                                    precipitation = hourly_precipitation[i]
+                                    # Check conditions: wind < 15 km/h and no precipitation
+                                    if wind_speed is not None and precipitation is not None:
+                                        if wind_speed < 15 and precipitation == 0:
+                                            # Mark this hour as valid for spraying
+                                            date_key = dt.date()
+                                            if date_key not in spray_hours_by_day:
+                                                spray_hours_by_day[date_key] = []
+                                            spray_hours_by_day[date_key].append(dt.hour)
                         except ValueError:
                             # Skip if time parsing fails
                             continue
+
+                # For each day, merge consecutive hours into ranges
+                for date_key, hours in spray_hours_by_day.items():
+                    if not hours:
+                        continue
+                    # Sort hours (though they should be in order)
+                    hours_sorted = sorted(hours)
+                    ranges = []
+                    start_hour = hours_sorted[0]
+                    prev_hour = hours_sorted[0]
+                    for h in hours_sorted[1:]:
+                        if h == prev_hour + 1:
+                            # Consecutive hour, continue the range
+                            prev_hour = h
+                        else:
+                            # End of current range
+                            ranges.append((start_hour, prev_hour + 1))  # end_hour is exclusive
+                            start_hour = h
+                            prev_hour = h
+                    # Add the last range
+                    ranges.append((start_hour, prev_hour + 1))
+
+                    # Convert ranges to strings "HH:00-HH:00"
+                    for start, end in ranges:
+                        # Format as HH:00-HH:00
+                        range_str = f"{start:02d}:00-{end:02d}:00"
+                        best_spray_window.append(range_str)
         except Exception as e:
             # Log error but don't fail the entire process - just return empty spray window
             logger.exception(f"Error calculating spray window: {str(e)}")
@@ -431,6 +550,7 @@ def generate_farming_advice_from_open_meteo_data(
         daily_wind_speed_max = forecast_data.get("wind_speed_10m_max", [])
         daily_temp_max = forecast_data.get("temperature_2m_max", [])
         daily_apparent_temp_max = forecast_data.get("apparent_temperature_max", [])
+        daily_et0 = forecast_data.get("et0_fao_evapotranspiration", [])
 
         # Improved rules as requested
         if daily_precipitation_prob and len(daily_precipitation_prob) > 0:
@@ -478,6 +598,33 @@ def generate_farming_advice_from_open_meteo_data(
                 advice.append("High temperatures expected: Increase irrigation")
             if min_temp != float('inf') and min_temp < 5:
                 advice.append("Low temperatures expected: Protect crops from frost")
+
+        # NEW: Multi-day dry period advice
+        if daily_precipitation_prob and len(daily_precipitation_prob) > 0 and daily_et0 and len(daily_et0) > 0:
+            dry_streak = 0
+            max_dry_streak = 0
+            for i in range(min(len(daily_precipitation_prob), 7)):
+                prob = daily_precipitation_prob[i]
+                et0_val = daily_et0[i] if i < len(daily_et0) else None
+                # Consider day as dry if rain probability < 30% and ET0 > 3 mm/day
+                if prob is not None and et0_val is not None and prob < 30 and et0_val > 3:
+                    dry_streak += 1
+                    max_dry_streak = max(max_dry_streak, dry_streak)
+                else:
+                    dry_streak = 0
+            if max_dry_streak >= 2:
+                advice.append(f"Multi-day dry period expected ({max_dry_streak} days with low rain & high ET0): Plan irrigation to compensate for high evapotranspiration.")
+
+        # NEW: ET0 vs rain probability advice for irrigation planning
+        if daily_et0 and len(daily_et0) > 0 and daily_precipitation_prob and len(daily_precipitation_prob) > 0:
+            high_et0_low_rain_days = 0
+            for i in range(min(len(daily_et0), 7)):
+                et0_val = daily_et0[i]
+                prob = daily_precipitation_prob[i] if i < len(daily_precipitation_prob) else None
+                if et0_val is not None and prob is not None and et0_val > 5 and prob < 30:
+                    high_et0_low_rain_days += 1
+            if high_et0_low_rain_days > 0:
+                advice.append(f"High evapotranspiration expected with low rain chance on {high_et0_low_rain_days} day(s): Consider increasing irrigation.")
 
         # Return advice or default message
         if advice:

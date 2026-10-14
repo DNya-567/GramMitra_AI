@@ -7,6 +7,7 @@ import {
   Save,
   X,
 } from "lucide-react";
+import { getPlaceLabel } from '../lib/place';
 
 export default function Profile() {
   const [user, setUser] = useState(null);
@@ -529,7 +530,7 @@ export default function Profile() {
             <dt>Preferred language</dt>
             <dd>{profile?.preferred_language ?? ""}</dd>
             <dt>Location</dt>
-            <dd>{profile?.location ?? ""}</dd>
+            <dd>{getPlaceLabel(profile)}</dd>
           </dl>
         )}
       </div>

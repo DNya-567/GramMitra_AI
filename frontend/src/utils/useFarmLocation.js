@@ -3,8 +3,9 @@ import {
   getCurrentLocation,
   checkLocationPermission,
   saveLocationToProfile,
-  getLocationFromProfile
-} from '../lib/location.jsx';
+  reverseGeocode
+} from '../lib/location.js';
+import { useProfile } from '../lib/profileContext.jsx';
 
 /**
  * Custom hook for farm location handling in GramMitra
@@ -15,38 +16,39 @@ export const useFarmLocation = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [permissionStatus, setPermissionStatus] = useState(null);
+  const { profile } = useProfile();
 
   // Load location from profile on init
   const loadLocationFromProfile = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const loc = await getLocationFromProfile();
-      setLocation(loc);
+      if (profile) {
+        const locationData = {
+          latitude: profile.latitude,
+          longitude: profile.longitude,
+          village: profile.village,
+          district: profile.district,
+          state: profile.state,
+          location: profile.location
+        };
+        // If all fields are null, set location to null
+        if (locationData.latitude === null && locationData.longitude === null &&
+            locationData.village === null && locationData.district === null &&
+            locationData.state === null && locationData.location === null) {
+          setLocation(null);
+        } else {
+          setLocation(locationData);
+        }
+      } else {
+        setLocation(null);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  // Get current location via GPS
-  const getCurrentPosition = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const pos = await getCurrentLocation();
-      setLocation(pos);
-      // Save to profile
-      await saveLocationToProfile(pos);
-      return pos;
-    } catch (err) {
-      setError(err.message);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  }, [profile]);
 
   // Check location permission status
   const checkPermission = useCallback(async () => {
@@ -65,16 +67,59 @@ export const useFarmLocation = () => {
     setLoading(true);
     setError(null);
     try {
-      await saveLocationToProfile(locationData);
-      setLocation(locationData);
-      return locationData;
+      // If we have latitude and longitude but missing structured data, try to reverse geocode
+      let processedData = { ...locationData };
+      if (
+        (processedData.latitude !== undefined && processedData.latitude !== null) ||
+        (processedData.longitude !== undefined && processedData.longitude !== null)
+      ) {
+        // Check if we are missing any of village, district, state
+        if (
+          !processedData.village ||
+          !processedData.district ||
+          !processedData.state
+        ) {
+          // Try to reverse geocode
+          const reverseData = await reverseGeocode(
+            processedData.latitude,
+            processedData.longitude
+          );
+          // Merge reverseData into processedData, but don't overwrite existing non-null fields
+          processedData = {
+            ...processedData,
+            ...reverseData
+          };
+        }
+      }
+
+      await saveLocationToProfile(processedData);
+      setLocation(processedData);
+      return processedData;
     } catch (err) {
       setError(err.message);
       throw err;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [reverseGeocode, saveLocationToProfile]);
+
+  // Get current location via GPS
+  const getCurrentPosition = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const pos = await getCurrentLocation();
+      // Save to profile (will reverse geocode if needed)
+      await saveLocation(pos);
+      setLocation(pos);
+      return pos;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [saveLocation]);
 
   // Initialize
   // Note: In a real app, you'd call loadLocationFromProfile in useEffect
